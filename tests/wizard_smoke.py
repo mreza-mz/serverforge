@@ -1,6 +1,7 @@
 """Drive the built ServerForge CLI through a Linux pseudo-terminal."""
 
 import io
+import json
 import os
 import subprocess
 import sys
@@ -11,10 +12,10 @@ import pexpect
 import yaml
 
 
-def spawn(binary, profile):
+def spawn(binary, *args):
     return pexpect.spawn(
         binary,
-        ["init", "--output", str(profile)],
+        list(args),
         env={**os.environ, "TERM": "xterm-256color"},
         dimensions=(48, 110),
         encoding="utf-8",
@@ -26,7 +27,7 @@ def create_redis_profile(binary, path):
     password = "test-only-redis!credential"
     passphrase = "test-only-vault!passphrase"
     transcript = io.StringIO()
-    with spawn(binary, path) as session:
+    with spawn(binary, "init", "--output", str(path)) as session:
         session.logfile_read = transcript
         session.expect_exact("Which services should this profile include?")
         for _ in range(7):
@@ -73,7 +74,7 @@ def create_redis_profile(binary, path):
 
 
 def cancel_before_writing(binary, path):
-    with spawn(binary, path) as session:
+    with spawn(binary, "init", "--output", str(path)) as session:
         session.expect_exact("Which services should this profile include?")
         session.sendcontrol("c")
         session.expect_exact("wizard interrupted")
@@ -84,7 +85,7 @@ def cancel_before_writing(binary, path):
 
 
 def decline_save(binary, path):
-    with spawn(binary, path) as session:
+    with spawn(binary, "init", "--output", str(path)) as session:
         session.expect_exact("Which services should this profile include?")
         session.send("\r")
         session.expect_exact("Target connection")
@@ -101,10 +102,45 @@ def decline_save(binary, path):
         raise AssertionError("declining the save prompt unexpectedly created a profile")
 
 
+def review_plan(binary, receipt_path, accept):
+    profile = Path(__file__).resolve().parents[1] / "examples" / "ssh.yaml"
+    with spawn(binary, "approve", "--config", str(profile), "--output", str(receipt_path)) as session:
+        session.expect_exact("Execution plan sha256:")
+        session.expect_exact("stage SSH allow rules")
+        session.expect_exact("Security approval · ssl")
+        if accept:
+            session.send("y")
+            session.expect_exact("Security approval · security_updates")
+            session.send("y")
+            session.expect_exact("Security approval · ufw")
+            session.send("y")
+            session.expect_exact("Approve this execution plan?")
+            session.send("y")
+            session.expect_exact("Approval receipt saved.")
+        else:
+            session.send("\r")
+            session.expect_exact("plan approval declined")
+        session.expect(pexpect.EOF)
+        session.close()
+
+    if not accept:
+        if session.exitstatus != 1 or receipt_path.exists():
+            raise AssertionError("declining a security action unexpectedly issued a receipt")
+        return
+    if session.exitstatus != 0:
+        raise AssertionError("the approval wizard did not complete")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    plan = json.loads(subprocess.check_output([binary, "plan", "--config", str(profile), "--json"]))
+    if receipt["plan_id"] != plan["id"] or receipt["security_actions"] != ["ssl", "security_updates", "ufw"]:
+        raise AssertionError("approval receipt differs from the reviewed plan")
+
+
 if __name__ == "__main__":
     cli = str(Path(sys.argv[1]).resolve(strict=True))
     with tempfile.TemporaryDirectory() as temp:
         create_redis_profile(cli, Path(temp) / "redis.yaml")
         cancel_before_writing(cli, Path(temp) / "canceled.yaml")
         decline_save(cli, Path(temp) / "declined.yaml")
+        review_plan(cli, Path(temp) / "approved.json", accept=True)
+        review_plan(cli, Path(temp) / "declined.json", accept=False)
     print("Wizard smoke checks passed")

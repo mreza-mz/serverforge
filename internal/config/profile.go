@@ -77,10 +77,10 @@ type Profile struct {
 }
 
 type Target struct {
-	Connection string `yaml:"connection"`
-	Host       string `yaml:"host,omitempty"`
-	User       string `yaml:"user,omitempty"`
-	Port       int    `yaml:"port,omitempty"`
+	Connection string `yaml:"connection" json:"connection"`
+	Host       string `yaml:"host,omitempty" json:"host,omitempty"`
+	User       string `yaml:"user,omitempty" json:"user,omitempty"`
+	Port       int    `yaml:"port,omitempty" json:"port,omitempty"`
 }
 
 type Database struct {
