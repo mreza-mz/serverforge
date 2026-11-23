@@ -69,6 +69,7 @@ func Run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 		profileCommand("plan", "Preview the execution plan for a profile", log, showPlan),
 		approveCommand(log),
 		applyCommand(log),
+		setupCommand(log),
 	)
 
 	err := root.ExecuteContext(ctx)
@@ -111,15 +112,8 @@ func initCommand(log logEvent) *cobra.Command {
 				return commandError{errors.New("init requires a terminal. Use validate and preflight with an existing YAML profile for automation")}
 			}
 			log("command_started", "init")
-			profile, err := wizard.Run(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr())
-			if err != nil {
-				return commandError{err}
-			}
-			if err := cmd.Context().Err(); err != nil {
-				return commandError{errors.New("wizard interrupted")}
-			}
-			if err := config.SaveNew(path, profile); err != nil {
-				return commandError{err}
+			if err := createProfile(cmd, path); err != nil {
+				return err
 			}
 			log("profile_created", "init")
 			return writeText(cmd.OutOrStdout(), "Profile saved.")
@@ -213,4 +207,18 @@ func writeText(out io.Writer, message string) error {
 func isTerminal(stream any) bool {
 	file, ok := stream.(*os.File)
 	return ok && term.IsTerminal(int(file.Fd()))
+}
+
+func createProfile(cmd *cobra.Command, path string) error {
+	profile, err := wizard.Run(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr())
+	if err != nil {
+		return commandError{err}
+	}
+	if err := cmd.Context().Err(); err != nil {
+		return commandError{errors.New("wizard interrupted")}
+	}
+	if err := config.SaveNew(path, profile); err != nil {
+		return commandError{err}
+	}
+	return nil
 }
