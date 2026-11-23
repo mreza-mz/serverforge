@@ -26,6 +26,7 @@ jobs:
         run: python -m pip install ansible-core==2.20.11 pexpect==4.9.0
       - name: Check formatting and dependencies
         run: |
+          bash -n bootstrap.sh
           test -z "$(gofmt -l cmd internal)"
           go mod verify
       - name: Vet and test
