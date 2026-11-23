@@ -135,6 +135,28 @@ def review_plan(binary, receipt_path, accept):
         raise AssertionError("approval receipt differs from the reviewed plan")
 
 
+def setup_declines_before_ansible(binary, path):
+    with spawn(binary, "setup", "--config", str(path)) as session:
+        session.expect_exact("Which services should this profile include?")
+        session.send(" ")
+        session.send("\r")
+        session.expect_exact("Target connection")
+        session.send("\r")
+        session.expect_exact("Security Wizard")
+        for _ in range(3):
+            session.send("\r")
+        session.expect_exact("Save this profile?")
+        session.send("y")
+        session.expect_exact("Execution plan sha256:")
+        session.expect_exact("Approve this execution plan?")
+        session.send("\r")
+        session.expect_exact("plan approval declined")
+        session.expect(pexpect.EOF)
+        session.close()
+    if session.exitstatus != 1 or not path.is_file() or list(path.parent.glob("*.state.json")):
+        raise AssertionError("declined setup did not preserve just the saved profile")
+
+
 if __name__ == "__main__":
     cli = str(Path(sys.argv[1]).resolve(strict=True))
     with tempfile.TemporaryDirectory() as temp:
@@ -143,4 +165,5 @@ if __name__ == "__main__":
         decline_save(cli, Path(temp) / "declined.yaml")
         review_plan(cli, Path(temp) / "approved.json", accept=True)
         review_plan(cli, Path(temp) / "declined.json", accept=False)
+        setup_declines_before_ansible(cli, Path(temp) / "guided.yaml")
     print("Wizard smoke checks passed")

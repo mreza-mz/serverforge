@@ -4,6 +4,16 @@ ServerForge is an MIT-licensed CLI for defining reusable Ubuntu server provision
 
 A profile can describe a local Ubuntu machine or an Ubuntu target reached over SSH. All preflight checks run on the local machine. For an SSH profile, the report covers the controller and marks the remote checks as deferred. During `apply`, an independent Ansible probe checks the selected target before changes. It verifies the Ubuntu release, systemd, privilege escalation, machine identity, and listener conflicts.
 
+## Guided setup
+
+After building and installing the prerequisites below, run:
+
+```sh
+./bin/serverforge setup
+```
+
+Choose services and the target, save the profile, and review the plan and its security confirmations in the same session. Setup creates `profile.yaml` in your current directory by default. Use `--config` for a different path, `--dry-run` to check the plan without applying it, or `--resume` to continue an interrupted execution. Use `apply` to run an existing profile again.
+
 ## Build and run
 
 Use Go 1.26 with the latest patch release. Running `apply` requires Ansible Core 2.20 or later on the controller. The target needs Ubuntu with systemd, Python 3, Ubuntu APT sources including Universe, and root or passwordless sudo. For SSH, configure a host key you have verified and a key available through OpenSSH or its agent.
