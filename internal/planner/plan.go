@@ -11,7 +11,7 @@ import (
 	"github.com/mreza-mz/serverforge/internal/config"
 )
 
-const version = 1
+const version = 2
 
 type Plan struct {
 	Version        int           `json:"version"`
@@ -53,12 +53,12 @@ func Build(profile config.Profile) (Plan, error) {
 	}
 	if selected[config.Docker] {
 		plan.Actions = append(plan.Actions, Action{
-			ID: string(config.Docker), Summary: "Install Docker Engine and enable its service.",
+			ID: string(config.Docker), Summary: "Install Ubuntu's docker.io package and enable Docker Engine.",
 		})
 	}
 	if selected[config.DockerCompose] {
 		plan.Actions = append(plan.Actions, Action{
-			ID: string(config.DockerCompose), Summary: "Install the Docker Compose CLI plugin.",
+			ID: string(config.DockerCompose), Summary: "Install Ubuntu's docker-compose-v2 CLI plugin.",
 			After: []string{string(config.Docker)},
 		})
 	}
@@ -142,15 +142,21 @@ func webActions(server config.Module, label string, web config.Web, tls *config.
 		Summary: "Install and enable " + label + " with an HTTP listener for the domain.",
 		Settings: []Setting{
 			{"Domain", web.Domain}, {"HTTP port", strconv.Itoa(web.HTTPPort)},
+			{"Document root", "/var/www/serverforge/" + web.Domain},
 		},
 	}}
+	if server == config.Caddy {
+		actions[0].Settings = append(actions[0].Settings, Setting{"Configuration", "/etc/caddy/Caddyfile"})
+	} else {
+		actions[0].Settings = append(actions[0].Settings, Setting{"Configuration", "Managed Nginx site replaces the Ubuntu default site"})
+	}
 	if tls != nil {
 		actions = append(actions, Action{
 			ID:               string(config.SSL),
 			Summary:          "Request and renew a TLS certificate and enable the HTTPS listener.",
 			Settings:         []Setting{{"Domain", web.Domain}, {"HTTPS port", strconv.Itoa(tls.Port)}, {"Contact email", tls.Email}},
 			After:            []string{string(server)},
-			Checks:           []string{"Verify domain ownership and the certificate issuer's challenge requirements."},
+			Checks:           []string{"Verify DNS and public ACME HTTP-01 reachability on TCP port 80."},
 			SecurityApproval: true,
 		})
 	}

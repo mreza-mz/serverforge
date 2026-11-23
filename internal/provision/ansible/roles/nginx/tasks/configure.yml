@@ -1,0 +1,78 @@
+---
+- name: Create web document root
+  ansible.builtin.file:
+    path: "/var/www/serverforge/{{ sf_domain }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Check existing certificate for Nginx
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ sf_domain }}/fullchain.pem"
+    follow: true
+  register: sf_nginx_cert
+
+- name: Inspect existing ServerForge Nginx site
+  ansible.builtin.stat:
+    path: /etc/nginx/sites-available/serverforge.conf
+  register: sf_nginx_site
+
+- name: Check existing site for managed TLS
+  ansible.builtin.command: /usr/bin/grep -q '^# serverforge tls$' /etc/nginx/sites-available/serverforge.conf
+  register: sf_nginx_tls
+  changed_when: false
+  failed_when: sf_nginx_tls.rc not in [0, 1]
+  check_mode: false
+  when: sf_nginx_site.stat.exists
+
+- name: Preserve existing TLS without explicit TLS approval
+  ansible.builtin.assert:
+    that: sf_tls_enabled or (sf_nginx_tls.rc | default(1)) != 0
+
+- name: Write managed Nginx site
+  ansible.builtin.template:
+    src: site.conf.j2
+    dest: /etc/nginx/sites-available/serverforge.conf
+    owner: root
+    group: root
+    mode: '0644'
+  vars:
+    sf_nginx_https: "{{ sf_tls_enabled and (sf_setting_tls or sf_nginx_cert.stat.exists) }}"
+  register: sf_nginx_template
+
+- name: Enable managed Nginx site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/serverforge.conf
+    dest: /etc/nginx/sites-enabled/serverforge.conf
+    state: link
+  register: sf_nginx_link
+  when: not ansible_check_mode or sf_nginx_site.stat.exists
+
+- name: Disable Ubuntu default Nginx site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  register: sf_nginx_default
+
+- name: Validate Nginx configuration
+  ansible.builtin.command: /usr/sbin/nginx -t -q
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Activate and enable Nginx
+  ansible.builtin.include_role:
+    name: activate_service
+  vars:
+    sf_service_unit: nginx
+    sf_service_config_changed: "{{ sf_nginx_template.changed or sf_nginx_link.changed or sf_nginx_default.changed }}"
+    sf_service_enabled: true
+    sf_service_files:
+      - /etc/nginx/sites-enabled/serverforge.conf
+
+- name: Verify Nginx HTTP listener
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ sf_http_port }}"
+    timeout: 15
+  when: not ansible_check_mode

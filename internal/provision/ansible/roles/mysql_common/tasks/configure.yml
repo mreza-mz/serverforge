@@ -1,0 +1,29 @@
+---
+- name: Configure SQL loopback listener
+  ansible.builtin.copy:
+    dest: "{{ sf_sql_conf_dir }}/zz-serverforge.cnf"
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [mysqld]
+      bind-address=127.0.0.1
+      port={{ sf_database.port }}
+      {% if sf_engine == 'mysql' %}
+      mysqlx=0
+      {% endif %}
+  register: sf_sql_config
+
+- name: Enable and start SQL service
+  ansible.builtin.include_role:
+    name: activate_service
+  vars:
+    sf_service_unit: "{{ sf_sql_service }}"
+    sf_service_config_changed: "{{ sf_sql_config.changed }}"
+    sf_service_enabled: true
+    sf_service_files:
+      - "{{ sf_sql_conf_dir }}/zz-serverforge.cnf"
+
+- name: Validate SQL health and configure database
+  ansible.builtin.include_tasks: database.yml
+  when: not ansible_check_mode

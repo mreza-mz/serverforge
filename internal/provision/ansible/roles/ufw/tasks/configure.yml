@@ -1,0 +1,89 @@
+---
+- name: Identify the SSH port to preserve
+  ansible.builtin.include_role:
+    name: firewall_guard
+    tasks_from: connection.yml
+
+- name: Compute approved TCP allowances
+  ansible.builtin.set_fact:
+    sf_ufw_ports: "{{ (sf_web_ports + ([sf_firewall_connection.stdout.split()[3] | int] if sf_remote else [])) | unique | list }}"
+
+- name: Read current UFW status
+  ansible.builtin.command: /usr/sbin/ufw status
+  environment:
+    LC_ALL: C
+  register: sf_ufw_status
+  check_mode: false
+  changed_when: false
+
+- name: Read current UFW default policy
+  ansible.builtin.command: /usr/bin/grep -Fx 'DEFAULT_INPUT_POLICY="DROP"' /etc/default/ufw
+  register: sf_ufw_policy
+  check_mode: false
+  changed_when: false
+  failed_when: sf_ufw_policy.rc not in [0, 1]
+
+- name: Read configured UFW rules
+  ansible.builtin.command: /usr/sbin/ufw show added
+  register: sf_ufw_rules
+  check_mode: false
+  changed_when: false
+
+- name: Report proposed UFW rules and policy in check mode
+  ansible.builtin.debug:
+    msg: Checked UFW against the approved incoming policy and ports.
+  changed_when: >-
+    'Status: active' not in sf_ufw_status.stdout or sf_ufw_policy.rc != 0 or
+    (sf_ufw_ports | map('regex_replace', '^([0-9]+)$', 'ufw allow \1/tcp') |
+    difference(sf_ufw_rules.stdout_lines) | length > 0)
+  when: ansible_check_mode
+
+- name: Stage automatic rollback before applying UFW
+  ansible.builtin.include_role:
+    name: firewall_guard
+    tasks_from: begin.yml
+  when: not ansible_check_mode
+
+- name: Apply UFW with active rollback
+  when: not ansible_check_mode
+  block:
+    - name: Allow the actual SSH port and approved web ports
+      ansible.builtin.command:
+        argv: [/usr/sbin/ufw, allow, "{{ item }}/tcp"]
+      environment:
+        LC_ALL: C
+      loop: "{{ sf_ufw_ports }}"
+      register: sf_ufw_allowed
+      changed_when: "'Skipping adding existing rule' not in sf_ufw_allowed.stdout"
+
+    - name: Set incoming policy to deny
+      ansible.builtin.command: /usr/sbin/ufw default deny incoming
+      when: sf_ufw_policy.rc != 0
+
+    - name: Activate UFW with staged SSH access
+      ansible.builtin.command: /usr/sbin/ufw --force enable
+      when: "'Status: active' not in sf_ufw_status.stdout"
+
+    - name: Ensure UFW starts at boot
+      ansible.builtin.systemd_service:
+        name: ufw
+        state: started
+        enabled: true
+
+    - name: Verify UFW is active
+      ansible.builtin.command: /usr/sbin/ufw status
+      environment:
+        LC_ALL: C
+      register: sf_ufw_after
+      changed_when: false
+      failed_when: "'Status: active' not in sf_ufw_after.stdout"
+
+    - name: Verify independent access before retaining UFW settings
+      ansible.builtin.include_role:
+        name: firewall_guard
+        tasks_from: finish.yml
+  rescue:
+    - name: Roll back failed UFW change
+      ansible.builtin.include_role:
+        name: firewall_guard
+        tasks_from: abort.yml

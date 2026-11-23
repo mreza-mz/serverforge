@@ -1,0 +1,51 @@
+---
+- name: Install Redis ACL password verifier
+  ansible.builtin.copy:
+    dest: /etc/redis/serverforge.acl
+    mode: '0640'
+    owner: root
+    group: redis
+    content: |
+      user default on #{{ sf_verifiers.redis }} ~* &* +@all -@admin -@dangerous
+  no_log: true
+  register: sf_redis_acl
+
+- name: Configure Redis private listener and ACL file
+  ansible.builtin.copy:
+    dest: /etc/redis/serverforge.conf
+    owner: root
+    group: redis
+    mode: '0640'
+    content: |
+      bind 127.0.0.1
+      protected-mode yes
+      port {{ sf_redis_port }}
+      aclfile /etc/redis/serverforge.acl
+  register: sf_redis_config
+
+- name: Load managed Redis settings
+  ansible.builtin.lineinfile:
+    path: /etc/redis/redis.conf
+    regexp: '^include /etc/redis/serverforge\.conf$'
+    line: include /etc/redis/serverforge.conf
+    insertafter: EOF
+  register: sf_redis_include
+
+- name: Enable and start protected Redis
+  ansible.builtin.include_role:
+    name: activate_service
+  vars:
+    sf_service_unit: redis-server
+    sf_service_config_changed: "{{ sf_redis_acl.changed or sf_redis_config.changed or sf_redis_include.changed }}"
+    sf_service_enabled: true
+    sf_service_files:
+      - /etc/redis/redis.conf
+      - /etc/redis/serverforge.acl
+      - /etc/redis/serverforge.conf
+
+- name: Verify Redis rejects unauthenticated clients
+  ansible.builtin.command: "/usr/bin/redis-cli -h 127.0.0.1 -p {{ sf_redis_port }} PING"
+  register: sf_redis_ping
+  changed_when: false
+  failed_when: "'NOAUTH' not in (sf_redis_ping.stdout ~ sf_redis_ping.stderr)"
+  when: not ansible_check_mode

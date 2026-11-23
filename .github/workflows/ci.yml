@@ -34,6 +34,8 @@ jobs:
         run: |
           go vet ./...
           go test -race -cover ./...
+      - name: Syntax-check Ansible assets
+        run: python tests/ansible_syntax.py
       - name: Build and exercise the CLI
         run: |
           go build -o "$RUNNER_TEMP/serverforge" ./cmd/serverforge

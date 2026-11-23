@@ -1,0 +1,29 @@
+---
+- name: Open a fresh SSH login and validate the remote transport
+  ansible.builtin.wait_for_connection:
+    connect_timeout: 5
+    sleep: 1
+    timeout: 25
+  when: sf_remote
+
+- name: Verify the fresh login reached the original target
+  ansible.builtin.slurp:
+    src: /etc/machine-id
+  register: sf_verified_firewall_target
+  no_log: true
+
+- name: Compare target identity during the guarded transaction
+  ansible.builtin.assert:
+    that: (sf_verified_firewall_target.content | b64decode | trim | hash('sha256')) == sf_target_id
+  no_log: true
+
+- name: Commit the verified firewall transaction
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - /run/serverforge-firewall/restore.sh
+      - commit
+      - "{{ sf_role }}"
+      - "{{ sf_firewall_uuid.stdout }}"
+      - "serverforge-rollback-{{ sf_firewall_uuid.stdout }}.timer"
+  changed_when: false

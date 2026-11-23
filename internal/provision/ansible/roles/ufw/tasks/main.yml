@@ -1,0 +1,12 @@
+---
+- name: Install UFW without activating package services
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Converge installed firewall
+  ansible.builtin.include_tasks: configure.yml
+  when: not ansible_check_mode or 'ufw' in ansible_facts.packages

@@ -1,0 +1,16 @@
+---
+- name: Read server-side SSH management route
+  ansible.builtin.command: /usr/bin/printenv SSH_CONNECTION
+  become: false
+  changed_when: false
+  check_mode: false
+  register: sf_firewall_connection
+  when: sf_remote
+
+- name: Verify server-side management route
+  ansible.builtin.assert:
+    that:
+      - sf_firewall_connection.stdout.split() | length == 4
+      - sf_firewall_connection.stdout.split()[0] is match('^[0-9a-fA-F:.]+$')
+      - sf_firewall_connection.stdout.split()[3] | int in range(1, 65536)
+  when: sf_remote

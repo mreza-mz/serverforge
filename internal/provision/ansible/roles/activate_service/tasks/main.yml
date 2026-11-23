@@ -1,0 +1,52 @@
+---
+- name: Read service configuration checksums
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+    follow: true
+  loop: "{{ sf_service_files }}"
+  register: sf_service_checksums
+  no_log: true
+
+- name: Calculate service configuration revision
+  ansible.builtin.set_fact:
+    sf_service_revision: >-
+      {{ sf_service_checksums.results | selectattr('stat.checksum', 'defined') |
+      map(attribute='stat.checksum') | join(':') | hash('sha256') }}
+  no_log: true
+
+- name: Read last activated service revision
+  ansible.builtin.command:
+    argv: [/usr/bin/cat, "/var/lib/serverforge/checksums/{{ sf_service_unit }}"]
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  register: sf_service_previous
+  no_log: true
+
+- name: Activate and validate the systemd unit
+  ansible.builtin.systemd_service:
+    name: "{{ sf_service_unit }}"
+    enabled: "{{ sf_service_enabled | default(omit) }}"
+    state: >-
+      {{ 'restarted' if (sf_service_config_changed or sf_service_previous.stdout != sf_service_revision) else 'started' }}
+
+- name: Record successful service activation
+  when: not ansible_check_mode
+  block:
+    - name: Create independent service state directory
+      ansible.builtin.file:
+        path: /var/lib/serverforge/checksums
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Store service configuration revision
+      ansible.builtin.copy:
+        dest: "/var/lib/serverforge/checksums/{{ sf_service_unit }}"
+        content: "{{ sf_service_revision }}\n"
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true

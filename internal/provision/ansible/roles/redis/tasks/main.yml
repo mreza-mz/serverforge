@@ -1,0 +1,12 @@
+---
+- name: Install Redis
+  ansible.builtin.apt:
+    name: redis-server
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Configure installed Redis
+  ansible.builtin.include_tasks: configure.yml
+  when: not ansible_check_mode or 'redis-server' in ansible_facts.packages

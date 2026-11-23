@@ -1,0 +1,22 @@
+---
+- name: Allocate a unique rollback timer
+  ansible.builtin.command: /usr/bin/cat /proc/sys/kernel/random/uuid
+  register: sf_firewall_uuid
+  changed_when: false
+
+- name: Install temporary firewall rollback helper
+  ansible.builtin.copy:
+    src: restore.sh
+    dest: "/run/serverforge-rollback-{{ sf_firewall_uuid.stdout }}.sh"
+    mode: '0700'
+  changed_when: false
+
+- name: Snapshot and arm rollback before changing firewall policy
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - "/run/serverforge-rollback-{{ sf_firewall_uuid.stdout }}.sh"
+      - arm
+      - "{{ sf_role }}"
+      - "{{ sf_firewall_uuid.stdout }}"
+  changed_when: false

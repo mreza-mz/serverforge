@@ -1,0 +1,13 @@
+---
+- name: Install Ubuntu Docker Compose plugin
+  ansible.builtin.apt:
+    name: docker-compose-v2
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Verify Docker Compose responds
+  ansible.builtin.command: /usr/bin/docker compose version
+  changed_when: false
+  when: not ansible_check_mode

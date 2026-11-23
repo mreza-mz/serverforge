@@ -1,0 +1,43 @@
+---
+- name: Install unattended Ubuntu updates
+  ansible.builtin.apt:
+    name: unattended-upgrades
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Configure automatic security updates and disable automatic reboots
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/99-serverforge-security-updates
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      #clear Unattended-Upgrade::Allowed-Origins;
+      #clear Unattended-Upgrade::Origins-Pattern;
+      Unattended-Upgrade::Allowed-Origins {
+          "${distro_id}:${distro_codename}-security";
+          "${distro_id}ESMApps:${distro_codename}-apps-security";
+          "${distro_id}ESM:${distro_codename}-infra-security";
+      };
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      Unattended-Upgrade::Automatic-Reboot "false";
+
+- name: Enable apt update and upgrade timers
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop: [apt-daily.timer, apt-daily-upgrade.timer]
+
+- name: Verify unattended update settings load
+  ansible.builtin.command: /usr/bin/apt-config dump
+  register: sf_apt_config
+  changed_when: false
+  failed_when: >-
+    sf_apt_config.rc != 0 or
+    'APT::Periodic::Unattended-Upgrade "1";' not in sf_apt_config.stdout or
+    'Unattended-Upgrade::Automatic-Reboot "false";' not in sf_apt_config.stdout
+  when: not ansible_check_mode

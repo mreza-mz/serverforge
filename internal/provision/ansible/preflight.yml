@@ -1,0 +1,83 @@
+---
+- name: Inspect Ubuntu target without changing system configuration
+  hosts: all
+  gather_facts: true
+  gather_subset: ['!all', '!min', distribution, service_mgr]
+  become: "{{ sf_become }}"
+  tasks:
+    - name: Verify supported Ubuntu and systemd
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Ubuntu'
+          - ansible_facts.distribution_version in ['22.04', '24.04', '26.04']
+          - ansible_facts.service_mgr == 'systemd'
+
+    - name: Verify root or passwordless sudo
+      ansible.builtin.command: /usr/bin/id -u
+      register: sf_uid
+      changed_when: false
+      failed_when: sf_uid.stdout != '0'
+
+    - name: Read SSH management connection
+      ansible.builtin.command: /usr/bin/printenv SSH_CONNECTION
+      become: false
+      register: sf_connection
+      changed_when: false
+      when: sf_remote
+
+    - name: Validate active SSH management connection
+      ansible.builtin.assert:
+        that: sf_connection.stdout.split() | length == 4
+      when: sf_remote
+
+    - name: Detect local SSH services before guarded security actions
+      ansible.builtin.command: /usr/bin/systemctl is-active ssh.service ssh.socket
+      register: sf_ssh_units
+      changed_when: false
+      failed_when: sf_ssh_units.rc not in [0, 3, 4]
+      when: sf_guard_firewall and not sf_remote
+
+    - name: Require direct console or remote verification for firewall changes
+      ansible.builtin.assert:
+        that:
+          - not sf_local_ssh
+          - "'active' not in sf_ssh_units.stdout_lines"
+      when: sf_guard_firewall and not sf_remote
+
+    - name: Find listening TCP ports
+      ansible.builtin.command: /usr/bin/ss -Hltnp
+      register: sf_listeners
+      changed_when: false
+
+    - name: Reject ports occupied by a different service
+      ansible.builtin.assert:
+        that:
+          - not (item.0.split()[3].rsplit(':', 1)[-1] == item.1.key) or
+            (item.0 | regex_search('\\("(' ~ (item.1.value | join('|')) ~ ')",')) is not none
+      loop: "{{ sf_listeners.stdout_lines | product(sf_ports | dict2items) | list }}"
+
+    - name: Verify Fail2ban can monitor SSH
+      ansible.builtin.command: /usr/bin/test -x /usr/sbin/sshd
+      changed_when: false
+      when: "'fail2ban' in sf_actions"
+
+    - name: Resolve the requested TLS domain
+      ansible.builtin.command:
+        argv: [/usr/bin/getent, ahosts, "{{ sf_domain }}"]
+      changed_when: false
+      when: sf_tls_enabled
+
+    - name: Read target machine identity
+      ansible.builtin.slurp:
+        src: /etc/machine-id
+      register: sf_machine
+      no_log: true
+
+    - name: Verify target has a stable machine identity
+      ansible.builtin.assert:
+        that: (sf_machine.content | b64decode | trim) is match('^[0-9a-f]{32}$')
+      no_log: true
+
+    - name: Report verified target identity
+      ansible.builtin.set_fact:
+        sf_machine_id: "{{ sf_machine.content | b64decode | trim | hash('sha256') }}"

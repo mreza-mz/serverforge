@@ -1,0 +1,26 @@
+# Managed by the site provisioning profile
+{% if sf_nginx_https %}
+# serverforge tls
+{% endif %}
+server {
+    listen {{ sf_http_port }};
+    listen [::]:{{ sf_http_port }};
+    server_name {{ sf_domain }};
+    root /var/www/serverforge/{{ sf_domain }};
+
+    location ^~ /.well-known/acme-challenge/ { try_files $uri =404; }
+    location / { try_files $uri $uri/ =404; }
+}
+{% if sf_nginx_https %}
+server {
+    listen {{ sf_https_port }} ssl;
+    listen [::]:{{ sf_https_port }} ssl;
+    server_name {{ sf_domain }};
+    root /var/www/serverforge/{{ sf_domain }};
+    ssl_certificate /etc/letsencrypt/live/{{ sf_domain }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ sf_domain }}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location / { try_files $uri $uri/ =404; }
+}
+{% endif %}

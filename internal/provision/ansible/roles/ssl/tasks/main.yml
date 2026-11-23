@@ -1,0 +1,44 @@
+---
+- name: Install trust roots for Caddy
+  ansible.builtin.apt:
+    name: ca-certificates
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: sf_web_server == 'caddy'
+
+- name: Configure Nginx certificate issuance and renewal
+  ansible.builtin.include_tasks: nginx.yml
+  when: sf_web_server == 'nginx'
+
+- name: Enable Caddy TLS certificate management
+  ansible.builtin.include_role:
+    name: caddy
+    tasks_from: configure.yml
+  vars:
+    sf_setting_tls: true
+  when:
+    - sf_web_server == 'caddy'
+    - not ansible_check_mode or 'caddy' in ansible_facts.packages
+
+- name: Verify a trusted certificate for the requested domain
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |
+        import socket
+        import ssl
+        import sys
+        context = ssl.create_default_context()
+        with socket.create_connection(("127.0.0.1", int(sys.argv[2])), timeout=5) as raw:
+            with context.wrap_socket(raw, server_hostname=sys.argv[1]):
+                pass
+      - "{{ sf_domain }}"
+      - "{{ sf_https_port }}"
+  changed_when: false
+  register: sf_tls_health
+  until: sf_tls_health.rc == 0
+  retries: 12
+  delay: 5
+  when: not ansible_check_mode

@@ -1,0 +1,52 @@
+---
+- name: Create Caddy document root
+  ansible.builtin.file:
+    path: "/var/www/serverforge/{{ sf_domain }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Check Caddy for already configured TLS
+  ansible.builtin.command: /usr/bin/grep -q '^# serverforge tls$' /etc/caddy/Caddyfile
+  register: sf_caddy_tls
+  changed_when: false
+  failed_when: sf_caddy_tls.rc not in [0, 1]
+  check_mode: false
+
+- name: Preserve existing Caddy TLS without explicit TLS approval
+  ansible.builtin.assert:
+    that: sf_tls_enabled or sf_caddy_tls.rc != 0
+
+- name: Write managed Caddy site
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: /etc/caddy/Caddyfile
+    owner: root
+    group: root
+    mode: '0644'
+  vars:
+    sf_caddy_https: "{{ sf_tls_enabled and (sf_setting_tls or sf_caddy_tls.rc == 0) }}"
+  register: sf_caddy_template
+
+- name: Validate Caddy configuration
+  ansible.builtin.command: /usr/bin/caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Activate and enable Caddy
+  ansible.builtin.include_role:
+    name: activate_service
+  vars:
+    sf_service_unit: caddy
+    sf_service_config_changed: "{{ sf_caddy_template.changed }}"
+    sf_service_enabled: true
+    sf_service_files:
+      - /etc/caddy/Caddyfile
+
+- name: Verify Caddy HTTP listener
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ sf_http_port }}"
+    timeout: 15
+  when: not ansible_check_mode

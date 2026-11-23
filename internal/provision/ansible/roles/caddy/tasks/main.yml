@@ -1,0 +1,14 @@
+---
+- name: Install Caddy
+  ansible.builtin.apt:
+    name: caddy
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Configure installed Caddy
+  ansible.builtin.include_tasks: configure.yml
+  vars:
+    sf_setting_tls: false
+  when: not ansible_check_mode or 'caddy' in ansible_facts.packages

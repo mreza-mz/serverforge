@@ -57,3 +57,14 @@ func (r Receipt) SaveNew(path string) error {
 	}
 	return nil
 }
+
+// VerifyFile checks that a receipt authorizes the current plan.
+func VerifyFile(path string, plan planner.Plan) error {
+	var receipt Receipt
+	if err := privatefile.ReadJSON(path, &receipt); err != nil ||
+		receipt.Version != 1 || receipt.ApprovedAt.IsZero() || receipt.SecurityActions == nil {
+		return errors.New("could not read a valid owner-only approval receipt")
+	}
+	_, err := New(plan, receipt.PlanID, receipt.SecurityActions)
+	return err
+}

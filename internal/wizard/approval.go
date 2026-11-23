@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/mreza-mz/serverforge/internal/planner"
+	"github.com/mreza-mz/serverforge/internal/vault"
 )
 
 func ConfirmPlan(ctx context.Context, input io.Reader, output io.Writer, plan planner.Plan) ([]string, error) {
@@ -40,4 +41,13 @@ func ConfirmPlan(ctx context.Context, input io.Reader, output io.Writer, plan pl
 		return nil, err
 	}
 	return securityIDs, nil
+}
+
+func ReadVaultPassphrase(ctx context.Context, input io.Reader, output io.Writer) (string, error) {
+	var value string
+	field := passwordInput("Ansible Vault passphrase", &value, vault.ValidatePassword)
+	if err := runForm(ctx, input, output, field); err != nil {
+		return "", errors.New("Vault prompt interrupted")
+	}
+	return value, nil
 }

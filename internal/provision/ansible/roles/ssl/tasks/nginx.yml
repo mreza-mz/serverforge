@@ -1,0 +1,80 @@
+---
+- name: Install Certbot and TLS verification tools
+  ansible.builtin.apt:
+    name: [certbot, openssl, ca-certificates]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Check whether the Nginx certificate needs issuance
+  ansible.builtin.command: "/usr/bin/openssl x509 -checkend 2592000 -noout -in /etc/letsencrypt/live/{{ sf_domain }}/fullchain.pem"
+  register: sf_x509
+  failed_when: false
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Obtain or renew Nginx certificate
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/certbot
+      - certonly
+      - --webroot
+      - --webroot-path
+      - "/var/www/serverforge/{{ sf_domain }}"
+      - --non-interactive
+      - --agree-tos
+      - --keep-until-expiring
+      - --email
+      - "{{ sf_tls_email }}"
+      - --cert-name
+      - "{{ sf_domain }}"
+      - -d
+      - "{{ sf_domain }}"
+  environment:
+    LC_ALL: C
+  register: sf_certbot
+  changed_when: "'not yet due' not in (sf_certbot.stdout ~ sf_certbot.stderr)"
+  when: not ansible_check_mode and sf_x509.rc != 0
+
+- name: Create Certbot deploy hooks directory
+  ansible.builtin.file:
+    path: /etc/letsencrypt/renewal-hooks/deploy
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: not ansible_check_mode or 'certbot' in ansible_facts.packages
+
+- name: Install persistent Nginx renewal hook
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/serverforge-nginx
+    owner: root
+    group: root
+    mode: '0755'
+    content: |
+      #!/bin/sh
+      set -eu
+      /usr/sbin/nginx -t -q
+      /usr/bin/systemctl reload nginx
+  when: not ansible_check_mode or 'certbot' in ansible_facts.packages
+
+- name: Enable scheduled Certbot renewal
+  ansible.builtin.systemd_service:
+    name: certbot.timer
+    state: started
+    enabled: true
+  when: not ansible_check_mode or 'certbot' in ansible_facts.packages
+
+- name: Configure HTTPS listener in Nginx
+  ansible.builtin.include_role:
+    name: nginx
+    tasks_from: configure.yml
+  vars:
+    sf_setting_tls: "{{ not ansible_check_mode }}"
+  when: not ansible_check_mode or 'nginx' in ansible_facts.packages
+
+- name: Reload renewed certificate
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: reloaded
+  when: sf_certbot.changed | default(false)

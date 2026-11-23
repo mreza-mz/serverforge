@@ -1,0 +1,86 @@
+---
+- name: Identify the default PostgreSQL cluster
+  ansible.builtin.command: /usr/bin/pg_lsclusters --no-header
+  register: sf_clusters
+  check_mode: false
+  changed_when: false
+
+- name: Verify a single default PostgreSQL cluster
+  ansible.builtin.assert:
+    that:
+      - sf_clusters.stdout_lines | length == 1
+      - sf_clusters.stdout.split()[1] == 'main'
+      - sf_clusters.stdout.split()[0] is match('^[0-9]+$')
+
+- name: Configure PostgreSQL loopback listener
+  ansible.builtin.copy:
+    dest: "/etc/postgresql/{{ sf_clusters.stdout.split()[0] }}/main/conf.d/90-serverforge.conf"
+    owner: root
+    group: postgres
+    mode: '0640'
+    content: |
+      listen_addresses = '127.0.0.1'
+      port = {{ sf_database.port }}
+      password_encryption = 'scram-sha-256'
+  register: sf_pg_config
+
+- name: Configure SCRAM authentication for the application
+  ansible.builtin.lineinfile:
+    path: "/etc/postgresql/{{ sf_clusters.stdout.split()[0] }}/main/pg_hba.conf"
+    regexp: '^host\s+{{ sf_database.name }}\s+{{ sf_database.user }}\s+127\.0\.0\.1/32\s+'
+    insertbefore: '^host\s'
+    firstmatch: true
+    line: "host {{ sf_database.name }} {{ sf_database.user }} 127.0.0.1/32 scram-sha-256"
+  register: sf_pg_auth
+
+- name: Enable and start PostgreSQL cluster
+  ansible.builtin.include_role:
+    name: activate_service
+  vars:
+    sf_service_unit: "postgresql@{{ sf_clusters.stdout.split()[0] }}-main"
+    sf_service_config_changed: "{{ sf_pg_config.changed or sf_pg_auth.changed }}"
+    sf_service_files:
+      - "/etc/postgresql/{{ sf_clusters.stdout.split()[0] }}/main/conf.d/90-serverforge.conf"
+      - "/etc/postgresql/{{ sf_clusters.stdout.split()[0] }}/main/pg_hba.conf"
+
+- name: Enable PostgreSQL at startup
+  ansible.builtin.systemd_service:
+    name: postgresql
+    state: started
+    enabled: true
+
+- name: Validate PostgreSQL listener
+  ansible.builtin.command: "/usr/bin/pg_isready -h 127.0.0.1 -p {{ sf_database.port }}"
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Converge PostgreSQL role and database
+  ansible.builtin.command:
+    argv: [/usr/sbin/runuser, -u, postgres, --, /usr/bin/psql, -XAt, -v, ON_ERROR_STOP=1, -p, "{{ sf_database.port }}", -d, postgres]
+    stdin: |
+      DO $sf$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{ sf_database.user }}'
+                   AND (rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls)) THEN
+          RAISE EXCEPTION 'application account is privileged';
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_database WHERE datname = '{{ sf_database.name }}'
+                   AND pg_get_userbyid(datdba) <> '{{ sf_database.user }}') THEN
+          RAISE EXCEPTION 'database is already owned by a different role';
+        END IF;
+      END
+      $sf$;
+      SELECT 'CREATE ROLE "{{ sf_database.user }}" LOGIN'
+      WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{ sf_database.user }}')
+      \gexec
+      SELECT 'ALTER ROLE "{{ sf_database.user }}" WITH LOGIN PASSWORD ''{{ sf_verifiers.postgresql }}'''
+      WHERE EXISTS (SELECT 1 FROM pg_authid WHERE rolname = '{{ sf_database.user }}'
+                    AND (rolpassword IS DISTINCT FROM '{{ sf_verifiers.postgresql }}' OR NOT rolcanlogin))
+      \gexec
+      SELECT 'CREATE DATABASE "{{ sf_database.name }}" OWNER "{{ sf_database.user }}"'
+      WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '{{ sf_database.name }}')
+      \gexec
+  register: sf_pg_sql
+  changed_when: sf_pg_sql.stdout is search('CREATE ROLE|ALTER ROLE|CREATE DATABASE')
+  no_log: true
+  when: not ansible_check_mode

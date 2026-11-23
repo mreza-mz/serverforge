@@ -18,7 +18,7 @@ import (
 	"golang.org/x/term"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 type commandError struct{ error }
 
@@ -68,6 +68,7 @@ func Run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 		profileCommand("preflight", "Check local prerequisites without changing the system", log, checkPreflight),
 		profileCommand("plan", "Preview the execution plan for a profile", log, showPlan),
 		approveCommand(log),
+		applyCommand(log),
 	)
 
 	err := root.ExecuteContext(ctx)
