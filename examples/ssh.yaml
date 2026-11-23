@@ -1,0 +1,19 @@
+version: 1
+target:
+  connection: ssh
+  host: app.example.test
+  user: ubuntu
+  port: 22
+modules:
+  - caddy
+  - ssl
+web:
+  domain: app.example.test
+  http_port: 80
+tls:
+  email: admin@example.test
+  port: 443
+security:
+  ufw: true
+  fail2ban: false
+  security_updates: true

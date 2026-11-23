@@ -1,0 +1,14 @@
+version: 1
+target:
+  connection: local
+modules:
+  - docker
+  - docker_compose
+  - nginx
+web:
+  domain: app.example.test
+  http_port: 80
+security:
+  ufw: false
+  fail2ban: false
+  security_updates: false
