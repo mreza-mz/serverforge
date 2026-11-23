@@ -5,8 +5,8 @@ import (
 	"errors"
 	"io"
 	"os"
-	"path/filepath"
 
+	"github.com/mreza-mz/serverforge/internal/privatefile"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -118,31 +118,11 @@ func SaveNew(path string, profile Profile) error {
 		return errors.New("profile exceeds 128 KiB")
 	}
 
-	file, err := os.CreateTemp(filepath.Dir(path), ".serverforge-*")
-	if err != nil {
-		return errors.New("could not create profile in the destination directory")
-	}
-	defer os.Remove(file.Name())
-	defer file.Close()
-
-	if err := file.Chmod(0600); err != nil {
-		return errors.New("could not set profile permissions")
-	}
-	if _, err := file.Write(data); err != nil {
-		return errors.New("could not write profile")
-	}
-	if err := file.Sync(); err != nil {
-		return errors.New("could not sync profile")
-	}
-	if err := file.Close(); err != nil {
-		return errors.New("could not close profile")
-	}
-	err = os.Link(file.Name(), path)
-	if errors.Is(err, os.ErrExist) {
-		return errors.New("profile already exists")
-	}
-	if err != nil {
-		return errors.New("could not publish profile in the destination directory")
+	if err := privatefile.WriteNew(path, data); err != nil {
+		if errors.Is(err, privatefile.ErrExists) {
+			return errors.New("profile already exists")
+		}
+		return err
 	}
 	return nil
 }

@@ -1,0 +1,64 @@
+---
+- name: Identify the management source and SSH port
+  ansible.builtin.include_role:
+    name: firewall_guard
+    tasks_from: connection.yml
+
+- name: Stage automatic rollback before enabling the SSH jail
+  ansible.builtin.include_role:
+    name: firewall_guard
+    tasks_from: begin.yml
+  when: not ansible_check_mode
+
+- name: Configure and validate the guarded SSH jail
+  block:
+    - name: Write SSH jail and preserve the management source
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/jail.d/99-serverforge-sshd.local
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [sshd]
+          enabled = true
+          backend = systemd
+          port = {{ sf_firewall_connection.stdout.split()[3] if sf_remote else 'ssh' }}
+          ignoreip = 127.0.0.1/8 ::1{{ (' ' ~ sf_firewall_connection.stdout.split()[0]) if sf_remote else '' }}
+      register: sf_jail
+
+    - name: Validate Fail2ban configuration
+      ansible.builtin.command: /usr/bin/fail2ban-client -t
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Enable and start SSH jail
+      ansible.builtin.systemd_service:
+        name: fail2ban
+        state: "{{ 'restarted' if sf_jail.changed else 'started' }}"
+        enabled: true
+
+    - name: Verify Fail2ban SSH jail
+      ansible.builtin.command: /usr/bin/fail2ban-client status sshd
+      register: sf_jail_health
+      until: sf_jail_health.rc == 0
+      retries: 5
+      delay: 1
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Verify independent access before retaining the SSH jail
+      ansible.builtin.include_role:
+        name: firewall_guard
+        tasks_from: finish.yml
+      when: not ansible_check_mode
+  rescue:
+    - name: Roll back failed Fail2ban change
+      ansible.builtin.include_role:
+        name: firewall_guard
+        tasks_from: abort.yml
+      when: not ansible_check_mode
+
+    - name: Report Fail2ban check failure
+      ansible.builtin.fail:
+        msg: Could not check Fail2ban settings.
+      when: ansible_check_mode

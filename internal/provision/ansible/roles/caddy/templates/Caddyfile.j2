@@ -1,0 +1,29 @@
+{% if sf_caddy_https %}
+# serverforge tls
+{% endif %}
+{
+    admin off
+    auto_https disable_redirects
+    http_port {{ sf_http_port }}
+{% if sf_caddy_https %}
+    https_port {{ sf_https_port }}
+    email {{ sf_tls_email }}
+{% endif %}
+}
+
+http://{{ sf_domain }}:{{ sf_http_port }} {
+    root * /var/www/serverforge/{{ sf_domain }}
+    file_server
+}
+
+{% if sf_caddy_https %}
+https://{{ sf_domain }}:{{ sf_https_port }} {
+    tls {
+        issuer acme {
+            disable_tlsalpn_challenge
+        }
+    }
+    root * /var/www/serverforge/{{ sf_domain }}
+    file_server
+}
+{% endif %}

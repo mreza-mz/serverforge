@@ -14,11 +14,7 @@ import (
 
 func Run(ctx context.Context, input io.Reader, output io.Writer) (config.Profile, error) {
 	run := func(fields ...huh.Field) error {
-		form := huh.NewForm(huh.NewGroup(fields...)).WithInput(input).WithOutput(output).WithShowHelp(true)
-		if err := form.RunWithContext(ctx); err != nil {
-			return errors.New("wizard interrupted")
-		}
-		return nil
+		return runForm(ctx, input, output, fields...)
 	}
 	profile := config.Profile{Version: config.Version}
 	if err := selectServices(run, &profile); err != nil {
@@ -55,6 +51,14 @@ func Run(ctx context.Context, input io.Reader, output io.Writer) (config.Profile
 		return config.Profile{}, errors.New("profile creation canceled")
 	}
 	return profile, profile.Validate()
+}
+
+func runForm(ctx context.Context, input io.Reader, output io.Writer, fields ...huh.Field) error {
+	form := huh.NewForm(huh.NewGroup(fields...)).WithInput(input).WithOutput(output).WithShowHelp(true)
+	if err := form.RunWithContext(ctx); err != nil {
+		return errors.New("wizard interrupted")
+	}
+	return nil
 }
 
 func selectServices(run func(...huh.Field) error, profile *config.Profile) error {

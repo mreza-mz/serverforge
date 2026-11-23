@@ -55,7 +55,7 @@ func inspect(target config.Target, system probes) Report {
 		report.Scope = "ssh_controller"
 		report.Checks = append(report.Checks,
 			system.tool("ssh_client", "ssh", Fail),
-			Check{"remote_target", Deferred, "Remote OS, access and services require a future remote preflight."},
+			Check{"remote_target", Deferred, "Apply verifies the remote OS, access and listeners before provisioning."},
 		)
 	} else {
 		report.Checks = append(report.Checks,

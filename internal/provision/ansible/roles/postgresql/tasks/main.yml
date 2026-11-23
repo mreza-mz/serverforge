@@ -1,0 +1,14 @@
+---
+- name: Install PostgreSQL
+  ansible.builtin.apt:
+    name: postgresql
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Configure installed PostgreSQL cluster
+  ansible.builtin.include_tasks: configure.yml
+  vars:
+    sf_database: "{{ sf_databases.postgresql }}"
+  when: not ansible_check_mode or 'postgresql' in ansible_facts.packages

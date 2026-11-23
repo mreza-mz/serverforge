@@ -1,0 +1,14 @@
+---
+- name: Install selected SQL server
+  ansible.builtin.apt:
+    name: "{{ sf_sql_package }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Configure installed SQL server
+  ansible.builtin.include_tasks: configure.yml
+  vars:
+    sf_database: "{{ sf_databases[sf_engine] }}"
+  when: not ansible_check_mode or sf_sql_package in ansible_facts.packages

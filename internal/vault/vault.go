@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -82,4 +84,40 @@ func Validate(value string) error {
 		return invalid
 	}
 	return nil
+}
+
+// Decrypt opens an authenticated Vault mapping in memory.
+func Decrypt(ciphertext, passphrase string, keys []string) (map[string]string, error) {
+	if err := Validate(ciphertext); err != nil {
+		return nil, err
+	}
+	_, body, _ := strings.Cut(ciphertext, "\n")
+	plaintext, err := ansiblevault.Decrypt(header+"\n"+body, passphrase)
+	if err != nil {
+		return nil, errors.New("could not unlock the profile Vault")
+	}
+	invalid := errors.New("Vault must contain exactly the selected service passwords as YAML strings")
+	decoder := yaml.NewDecoder(strings.NewReader(plaintext))
+	var document yaml.Node
+	if decoder.Decode(&document) != nil || len(document.Content) != 1 ||
+		document.Content[0].Kind != yaml.MappingNode || decoder.Decode(new(yaml.Node)) != io.EOF {
+		return nil, invalid
+	}
+	fields := document.Content[0].Content
+	if len(fields) != len(keys)*2 {
+		return nil, invalid
+	}
+	secrets := make(map[string]string, len(keys))
+	for i := 0; i < len(fields); i += 2 {
+		key, password := fields[i], fields[i+1]
+		if key.ShortTag() != "!!str" || !slices.Contains(keys, key.Value) ||
+			password.ShortTag() != "!!str" || ValidatePassword(password.Value) != nil {
+			return nil, invalid
+		}
+		secrets[key.Value] = password.Value
+	}
+	if len(secrets) != len(keys) {
+		return nil, invalid
+	}
+	return secrets, nil
 }

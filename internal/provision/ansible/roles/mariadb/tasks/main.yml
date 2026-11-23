@@ -1,0 +1,12 @@
+---
+- name: Configure MariaDB
+  ansible.builtin.include_role:
+    name: mysql_common
+  vars:
+    sf_engine: mariadb
+    sf_sql_package: mariadb-server
+    sf_sql_service: mariadb
+    sf_sql_client: /usr/bin/mariadb
+    sf_sql_plugin: mysql_native_password
+    sf_sql_auth: "IDENTIFIED VIA mysql_native_password USING '{{ sf_verifiers.mariadb }}'"
+    sf_sql_conf_dir: /etc/mysql/mariadb.conf.d

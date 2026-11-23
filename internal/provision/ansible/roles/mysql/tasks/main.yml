@@ -1,0 +1,12 @@
+---
+- name: Configure MySQL
+  ansible.builtin.include_role:
+    name: mysql_common
+  vars:
+    sf_engine: mysql
+    sf_sql_package: mysql-server
+    sf_sql_service: mysql
+    sf_sql_client: /usr/bin/mysql
+    sf_sql_plugin: caching_sha2_password
+    sf_sql_auth: "IDENTIFIED WITH caching_sha2_password AS '{{ sf_verifiers.mysql }}'"
+    sf_sql_conf_dir: /etc/mysql/mysql.conf.d

@@ -1,0 +1,37 @@
+---
+- name: Apply a single ServerForge action
+  hosts: all
+  gather_facts: false
+  become: "{{ sf_become }}"
+  pre_tasks:
+    - name: Read target machine identity
+      ansible.builtin.slurp:
+        src: /etc/machine-id
+      register: sf_machine
+      no_log: true
+
+    - name: Verify target has not changed
+      ansible.builtin.assert:
+        that: (sf_machine.content | b64decode | trim | hash('sha256')) == sf_target_id
+      no_log: true
+
+    - name: Read installed package versions for check mode
+      ansible.builtin.package_facts:
+        manager: apt
+      when: ansible_check_mode
+
+    - name: Reject unfinished firewall rollback
+      ansible.builtin.stat:
+        path: /run/serverforge-firewall
+      register: sf_pending_firewall
+      when: sf_role in ['ufw', 'fail2ban']
+
+    - name: Wait for prior firewall rollback before retrying
+      ansible.builtin.assert:
+        that: not sf_pending_firewall.stat.exists
+      when: sf_role in ['ufw', 'fail2ban']
+
+  tasks:
+    - name: Run selected role
+      ansible.builtin.include_role:
+        name: "{{ sf_role }}"

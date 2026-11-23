@@ -1,0 +1,14 @@
+---
+- name: Install Nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Configure installed Nginx
+  ansible.builtin.include_tasks: configure.yml
+  vars:
+    sf_setting_tls: false
+  when: not ansible_check_mode or 'nginx' in ansible_facts.packages

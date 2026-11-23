@@ -1,0 +1,11 @@
+---
+- name: Restore prior rules when the target is still reachable
+  ansible.builtin.command:
+    argv: [/bin/bash, /run/serverforge-firewall/restore.sh, rollback, "{{ sf_role }}", "{{ sf_firewall_uuid.stdout }}"]
+  changed_when: false
+  ignore_errors: true
+  ignore_unreachable: true
+
+- name: Report failed guarded network change
+  ansible.builtin.fail:
+    msg: The independent rollback timer restores the prior configuration if the target is unreachable.

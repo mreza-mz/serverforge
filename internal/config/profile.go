@@ -77,10 +77,10 @@ type Profile struct {
 }
 
 type Target struct {
-	Connection string `yaml:"connection"`
-	Host       string `yaml:"host,omitempty"`
-	User       string `yaml:"user,omitempty"`
-	Port       int    `yaml:"port,omitempty"`
+	Connection string `yaml:"connection" json:"connection"`
+	Host       string `yaml:"host,omitempty" json:"host,omitempty"`
+	User       string `yaml:"user,omitempty" json:"user,omitempty"`
+	Port       int    `yaml:"port,omitempty" json:"port,omitempty"`
 }
 
 type Database struct {
@@ -103,7 +103,7 @@ type TLS struct {
 	Port  int    `yaml:"port"`
 }
 
-// Security records choices for the profile. A future apply must request its own approvals.
+// Security records profile intent. Apply requires separate approval of each selected security action.
 type Security struct {
 	UFW             bool `yaml:"ufw,omitempty"`
 	Fail2ban        bool `yaml:"fail2ban,omitempty"`
@@ -254,9 +254,10 @@ func (t Target) validate() error {
 }
 
 var (
-	dnsLabel = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
-	dbIdent  = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
-	sshUser  = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]{0,31}$`)
+	dnsLabel  = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
+	dbIdent   = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+	emailUser = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._%+-]*$`)
+	sshUser   = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]{0,31}$`)
 )
 
 func isHostname(value string) bool {
@@ -299,15 +300,28 @@ func ValidateEmail(value string) error {
 	if err != nil || address.Address != value {
 		return errors.New("enter an email address")
 	}
-	_, domain, _ := strings.Cut(value, "@")
-	if ValidateDomain(domain) != nil {
+	local, domain, _ := strings.Cut(value, "@")
+	if !emailUser.MatchString(local) || ValidateDomain(domain) != nil {
 		return errors.New("enter an email address with a fully qualified domain")
 	}
 	return nil
 }
 
-func (d DatabaseModule) ValidateName(value string) error { return validateIdentifier(value, d.maxName) }
-func (d DatabaseModule) ValidateUser(value string) error { return validateIdentifier(value, d.maxUser) }
+func (d DatabaseModule) ValidateName(value string) error {
+	switch strings.ToLower(value) {
+	case "postgres", "template0", "template1", "mysql", "sys", "information_schema", "performance_schema":
+		return errors.New("choose a name distinct from system databases")
+	}
+	return validateIdentifier(value, d.maxName)
+}
+
+func (d DatabaseModule) ValidateUser(value string) error {
+	name := strings.ToLower(value)
+	if name == "root" || name == "postgres" || name == "mysql" || strings.HasPrefix(name, "pg_") {
+		return errors.New("choose a username distinct from system accounts")
+	}
+	return validateIdentifier(value, d.maxUser)
+}
 
 func validateIdentifier(value string, limit int) error {
 	if len(value) > limit || !dbIdent.MatchString(value) {

@@ -1,0 +1,45 @@
+---
+- name: Inspect database and application account
+  ansible.builtin.command:
+    argv: ["{{ sf_sql_client }}", --protocol=socket, --user=root, --batch, --skip-column-names]
+    stdin: |
+      SELECT COUNT(*) FROM information_schema.schemata WHERE SCHEMA_NAME = '{{ sf_database.name }}';
+      SELECT plugin, authentication_string FROM mysql.user WHERE User = '{{ sf_database.user }}' AND Host = '127.0.0.1';
+  register: sf_sql_state
+  changed_when: false
+  no_log: true
+
+- name: Create selected SQL database
+  ansible.builtin.command:
+    argv: ["{{ sf_sql_client }}", --protocol=socket, --user=root]
+    stdin: CREATE DATABASE IF NOT EXISTS `{{ sf_database.name }}`
+  when: sf_sql_state.stdout_lines[0] == '0'
+
+- name: Create or update loopback SQL account
+  ansible.builtin.command:
+    argv: ["{{ sf_sql_client }}", --protocol=socket, --user=root]
+    stdin: |
+      CREATE USER IF NOT EXISTS '{{ sf_database.user }}'@'127.0.0.1' {{ sf_sql_auth }};
+      ALTER USER '{{ sf_database.user }}'@'127.0.0.1' {{ sf_sql_auth }};
+  no_log: true
+  when: sf_sql_state.stdout_lines[1:] != [sf_sql_plugin ~ '\t' ~ sf_verifiers[sf_engine]]
+
+- name: Read application grants
+  ansible.builtin.command:
+    argv: ["{{ sf_sql_client }}", --protocol=socket, --user=root, --batch, --skip-column-names]
+    stdin: SHOW GRANTS FOR '{{ sf_database.user }}'@'127.0.0.1'
+  register: sf_grants
+  changed_when: false
+  no_log: true
+
+- name: Grant application access to the selected database
+  ansible.builtin.command:
+    argv: ["{{ sf_sql_client }}", --protocol=socket, --user=root]
+    stdin: GRANT ALL PRIVILEGES ON `{{ sf_database.name }}`.* TO '{{ sf_database.user }}'@'127.0.0.1'
+  when: "('GRANT ALL PRIVILEGES ON `' ~ sf_database.name ~ '`.* TO ') not in sf_grants.stdout"
+
+- name: Verify SQL server loopback listener
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ sf_database.port }}"
+    timeout: 15

@@ -4,8 +4,10 @@ go 1.26.0
 
 require (
 	github.com/charmbracelet/huh v1.0.0
+	github.com/gofrs/flock v0.12.1
 	github.com/sosedoff/ansible-vault-go v0.2.0
 	github.com/spf13/cobra v1.10.2
+	github.com/xdg-go/stringprep v1.0.4
 	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/term v0.48.0
 )
