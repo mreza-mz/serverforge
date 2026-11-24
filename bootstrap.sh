@@ -84,7 +84,7 @@ if ! ansible_ready; then
 fi
 
 printf '%s\n' 'Building ServerForge.'
-git clone --quiet --depth 1 --branch provisioning https://github.com/mreza-mz/serverforge.git "$work/source" </dev/null
+git clone --quiet --depth 1 https://github.com/mreza-mz/serverforge.git "$work/source" </dev/null
 (cd "$work/source" && GOTOOLCHAIN=local "$go_bin" build -trimpath -o "$work/serverforge" ./cmd/serverforge)
 destination="$HOME/.local/bin/serverforge"
 install -D -m 0755 "$work/serverforge" "$destination"
