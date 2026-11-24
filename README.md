@@ -12,7 +12,7 @@ Run this in Bash on Ubuntu 22.04, 24.04, or 26.04 on amd64 or arm64. The downloa
 bash <(curl -fsSL https://raw.githubusercontent.com/mreza-mz/serverforge/main/bootstrap.sh)
 ```
 
-The bootstrap checks for Go and Ansible, installs missing dependencies, builds ServerForge into `~/.local/bin`, and opens the guided setup in the current directory. The local-server workflow uses root privileges through `sudo` when needed. To configure a server over SSH, append `--ssh-controller` so the wizard runs with your current account and SSH credentials. Append `--install-only` to install the CLI without opening setup. `--dry-run` still installs controller dependencies, then runs Ansible in check mode on the target.
+The bootstrap downloads a prebuilt Linux binary from GitHub Releases, verifies its pinned SHA-256, installs Ansible if needed, and opens guided setup. It installs ServerForge in `~/.local/bin`. If GitHub Releases is unavailable, set `SERVERFORGE_DOWNLOAD_BASE` to an HTTPS mirror containing the original release assets. The local-server workflow uses root privileges through `sudo` when needed. To configure a server over SSH, append `--ssh-controller` so the wizard runs with your current account and SSH credentials. Append `--install-only` to install the CLI without opening setup. `--dry-run` still installs controller dependencies, then runs Ansible in check mode on the target.
 
 ## Guided setup
 

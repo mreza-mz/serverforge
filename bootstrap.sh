@@ -29,8 +29,8 @@ done
     fail "Use Ubuntu 22.04, 24.04, or 26.04 LTS."
 arch=$(dpkg --print-architecture)
 case "$arch" in
-    amd64) go_sha=9849f4e04ee35303714e34fbc3ac8ab44ea3e448a95aa182f91e3b9b79c710ec; go_zip_sha=e1edb778de0aa08c8e827f5a873b35a46afe680fb241482c531725b2355e470d ;;
-    arm64) go_sha=6c2f29b458b5add0835f18b776f69c8881a6d88428f1484a6da55755e620757e; go_zip_sha=51902dab7e130b07083119a36ce09e0cc50fdd9d0d64184c24bd302072ad8b70 ;;
+    amd64) binary_sha=dd98729829929018b33f1d0650b6e6ca7d55d705464536525f9b79bd9b2562b4 ;;
+    arm64) binary_sha=b3b6057aa53474569b2486ce0bdda7184f6c9ef14f80a6bf78e39e38ed494e3a ;;
     *) fail "Supported architectures are amd64 and arm64." ;;
 esac
 
@@ -50,7 +50,6 @@ ansible_ready() {
 
 packages=()
 command -v curl >/dev/null || packages+=(curl)
-command -v git >/dev/null || packages+=(git)
 if "$ssh_controller" && ! command -v ssh >/dev/null; then packages+=(openssh-client); fi
 [[ -s /etc/ssl/certs/ca-certificates.crt ]] || packages+=(ca-certificates)
 if ! ansible_ready && ! command -v uv >/dev/null && ! command -v pipx >/dev/null; then
@@ -64,33 +63,14 @@ fi
 
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
-go_bin=go
-go_version=$(GOTOOLCHAIN=local go version 2>/dev/null || true)
-if [[ ! $go_version =~ go([0-9]+\.[0-9]+) ]] ||
-    ! dpkg --compare-versions "${BASH_REMATCH[1]}" ge 1.26; then
-    printf '%s\n' 'Downloading the Go build toolchain.'
-    if curl -fsSL "https://go.dev/dl/go1.26.11.linux-$arch.tar.gz" -o "$work/go.tar.gz"; then
-        printf '%s  %s\n' "$go_sha" "$work/go.tar.gz" | sha256sum -c --status ||
-            fail "The Go archive checksum does not match."
-        tar -xzf "$work/go.tar.gz" -C "$work"
-        go_bin="$work/go/bin/go"
-    else
-        printf '%s\n' 'Trying the official Go module proxy.'
-        module_version="v0.0.1-go1.26.11.linux-$arch"
-        curl -fsSL "https://proxy.golang.org/golang.org/toolchain/@v/$module_version.zip" -o "$work/go.zip" ||
-            fail "Could not download Go from either official source."
-        printf '%s  %s\n' "$go_zip_sha" "$work/go.zip" | sha256sum -c --status ||
-            fail "The Go module archive checksum does not match."
-        if ! command -v unzip >/dev/null; then
-            "${privilege[@]}" apt-get update </dev/null
-            "${privilege[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y unzip </dev/null
-        fi
-        unzip -q "$work/go.zip" -d "$work"
-        toolchain="$work/golang.org/toolchain@$module_version"
-        chmod +x "$toolchain"/bin/* "$toolchain"/pkg/tool/linux_"$arch"/*
-        go_bin="$toolchain/bin/go"
-    fi
-fi
+download_base=${SERVERFORGE_DOWNLOAD_BASE:-https://github.com/mreza-mz/serverforge/releases/download/v0.3.0}
+[[ $download_base == https://* ]] || fail "The binary download URL must use HTTPS."
+asset="serverforge-linux-$arch"
+printf '%s\n' 'Downloading the ServerForge binary.'
+curl -fsSL --proto '=https' --proto-redir '=https' --retry 2 -o "$work/serverforge" -- "${download_base%/}/$asset" ||
+    fail "Could not download ServerForge. Set SERVERFORGE_DOWNLOAD_BASE to an HTTPS mirror hosting the release assets."
+printf '%s  %s\n' "$binary_sha" "$work/serverforge" | sha256sum -c --status ||
+    fail "The ServerForge binary checksum does not match."
 
 if ! ansible_ready; then
     printf '%s\n' 'Installing Ansible Core in an isolated Python environment.'
@@ -100,9 +80,6 @@ if ! ansible_ready; then
     ansible_ready || fail "Ansible Core 2.20 or later must be available on PATH."
 fi
 
-printf '%s\n' 'Building ServerForge.'
-git clone --quiet --depth 1 https://github.com/mreza-mz/serverforge.git "$work/source" </dev/null
-(cd "$work/source" && GOTOOLCHAIN=local "$go_bin" build -trimpath -o "$work/serverforge" ./cmd/serverforge)
 destination="$HOME/.local/bin/serverforge"
 install -D -m 0755 "$work/serverforge" "$destination"
 printf 'ServerForge installed at %s\n' "$destination"
