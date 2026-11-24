@@ -4,6 +4,16 @@ ServerForge is an MIT-licensed CLI for defining reusable Ubuntu server provision
 
 A profile can describe a local Ubuntu machine or an Ubuntu target reached over SSH. All preflight checks run on the local machine. For an SSH profile, the report covers the controller and marks the remote checks as deferred. During `apply`, an independent Ansible probe checks the selected target before changes. It verifies the Ubuntu release, systemd, privilege escalation, machine identity, and listener conflicts.
 
+## One-command install and setup
+
+Run this in Bash on Ubuntu 22.04, 24.04, or 26.04 on amd64 or arm64. The download command needs `curl`.
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/mreza-mz/serverforge/provisioning/bootstrap.sh)
+```
+
+The bootstrap checks for Go and Ansible, installs missing dependencies, builds ServerForge into `~/.local/bin`, and opens the guided setup in the current directory. The local-server workflow uses root privileges through `sudo` when needed. To configure a server over SSH, append `--ssh-controller` so the wizard runs with your current account and SSH credentials. Append `--install-only` to install the CLI without opening setup. `--dry-run` still installs controller dependencies, then runs Ansible in check mode on the target.
+
 ## Guided setup
 
 After building and installing the prerequisites below, run:
